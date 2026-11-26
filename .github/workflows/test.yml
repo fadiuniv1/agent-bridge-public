@@ -12,10 +12,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Install dependencies
         run: pip install fastapi uvicorn httpx pydantic
       - name: Compile
         run: python -m py_compile server.py watchdog.py benchmark_routes.py
       - name: Unit tests
-        run: python -m unittest discover -s tests
+        run: python -m unittest discover -s tests -v
