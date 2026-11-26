@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Local Claude Code via Ollama — free, no subscriptions. Run: ./claude-local [args]
+cd "$(dirname "$0")"
+export ANTHROPIC_AUTH_TOKEN=ollama
+export ANTHROPIC_BASE_URL=http://<tailscale-ip>:11434
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768
+exec /home/snow/.local/bin/claude --model qwen3.5:4b "$@"

@@ -1,0 +1,14 @@
+# Generated / local state — never publish
+__pycache__/
+*.py[cod]
+*.log
+*.log.*
+sessions.db
+sessions.db-*
+sessions-*.db
+*.bak-*
+.env
+*.env
+!.env.example
+.coverage
+.pytest_cache/
