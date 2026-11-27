@@ -12,7 +12,7 @@
 | Tags | `v1.0.0` on both |
 | Branches | `main` only |
 | GitHub releases | **none yet** |
-| CI | initially failing; workflows fixed and re-running |
+| CI | **green** on both public repos (app `verify`, server `server tests`) |
 
 ## Full checklist (how to verify a public repo)
 
@@ -67,7 +67,7 @@ No release exists yet.
 ## TODO lists
 
 ### Do now (blocking public-readiness)
-- [ ] Confirm both CI badges green after workflow fixes
+- [x] Confirm both CI badges green after workflow fixes
 - [ ] Create GitHub release + attach standalone installer
 - [ ] Enable secret scanning / push protection
 - [ ] Enable branch protection on `main` (both repos)
