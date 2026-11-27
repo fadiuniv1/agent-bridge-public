@@ -1184,6 +1184,14 @@ class LocalizedAnswerTests(unittest.TestCase):
         self.assertIn("תשובה", result)
 
 
+class ReplyLanguageNameTests(unittest.TestCase):
+    def test_maps_rtl_codes(self):
+        self.assertEqual(server._reply_language_name("he"), "Hebrew")
+        self.assertEqual(server._reply_language_name("iw"), "Hebrew")
+        self.assertEqual(server._reply_language_name("ar"), "Arabic")
+        self.assertEqual(server._reply_language_name("xx"), "")
+
+
 class RTLModelRoutingTests(unittest.TestCase):
     """Hebrew/Arabic chat uses the multilingual local model when available."""
 

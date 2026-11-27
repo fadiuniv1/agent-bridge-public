@@ -3684,6 +3684,13 @@ async def agent_chat(req: ChatReq, idempotency_key: Optional[str] = Header(None,
             "\nThis exact request failed before with no change tool. Change approach: "
             "call write_file with complete file content now; do not only read files or ask a question."
         )
+    language_code = str(req.language or "").strip().lower()[:2]
+    reply_language = _reply_language_name(language_code)
+    if reply_language and not action_required:
+        user_prompt = (
+            f"{user_prompt}\n\nReply entirely in {reply_language}. Every word of your answer "
+            f"must be in {reply_language}; do not use English."
+        )
     user_message = {"role": "user", "content": user_prompt}
     if images:
         user_message["images"] = images
@@ -3765,10 +3772,7 @@ async def agent_chat(req: ChatReq, idempotency_key: Optional[str] = Header(None,
         req.model, action_context, action_required, images, available_models,
         simple_code=simple_code, language=language_code,
     )
-    reply_language = {
-        "he": "Hebrew", "iw": "Hebrew", "ar": "Arabic", "fr": "French",
-        "es": "Spanish", "de": "German", "tr": "Turkish", "ru": "Russian",
-    }.get(language_code)
+    reply_language = _reply_language_name(language_code)
     if is_fast_path:
         system_prompt += (
             " Call tools directly; never print a JSON tool call, a code fence of tool arguments, "
@@ -4327,6 +4331,14 @@ _LOCALIZED_PREFIXES = {
     "Turkish": "Yanıt: ",
     "Russian": "Ответ: ",
 }
+
+
+def _reply_language_name(code: str) -> str:
+    """Map a two-letter request language to its display name."""
+    return {
+        "he": "Hebrew", "iw": "Hebrew", "ar": "Arabic", "fr": "French",
+        "es": "Spanish", "de": "German", "tr": "Turkish", "ru": "Russian",
+    }.get(str(code or "").strip().lower()[:2], "")
 
 
 def _localize_final_answer(text: str, language_name: str) -> str:
