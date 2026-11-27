@@ -1184,6 +1184,48 @@ class LocalizedAnswerTests(unittest.TestCase):
         self.assertIn("תשובה", result)
 
 
+class RTLModelRoutingTests(unittest.TestCase):
+    """Hebrew/Arabic chat uses the multilingual local model when available."""
+
+    def setUp(self):
+        self.available = ["qwen3.5:4b", "qwen2.5-coder:1.5b", "gemma3:4b"]
+
+    def test_hebrew_and_arabic_route_to_gemma(self):
+        for code in ("he", "iw", "ar"):
+            model, fast = server.select_chat_model(
+                "auto", "Explain VPN", False, [], self.available, language=code)
+            self.assertEqual(model, "gemma3:4b")
+            self.assertFalse(fast)
+
+    def test_action_job_keeps_strong_model(self):
+        model, fast = server.select_chat_model(
+            "auto", "write a file", True, [], self.available, language="he")
+        self.assertEqual(model, "qwen3.5:4b")
+        self.assertFalse(fast)
+
+    def test_image_job_keeps_strong_model(self):
+        model, fast = server.select_chat_model(
+            "auto", "Look at this", False, ["img"], self.available, language="ar")
+        self.assertEqual(model, "qwen3.5:4b")
+        self.assertFalse(fast)
+
+    def test_fallback_when_gemma_not_installed(self):
+        model, fast = server.select_chat_model(
+            "auto", "Explain VPN", False, [], ["qwen3.5:4b", "qwen2.5-coder:1.5b"],
+            language="he")
+        self.assertEqual(model, "qwen2.5-coder:1.5b")
+        self.assertTrue(fast)
+
+    def test_english_and_explicit_model_unchanged(self):
+        model, fast = server.select_chat_model(
+            "auto", "Hello", False, [], self.available, language="en")
+        self.assertEqual(model, "qwen2.5-coder:1.5b")
+        self.assertTrue(fast)
+        model, _ = server.select_chat_model(
+            "llama3.2:3b", "Explain VPN", False, [], self.available, language="he")
+        self.assertEqual(model, "llama3.2:3b")
+
+
 class CloudNormalizerTests(unittest.TestCase):
     """Cloud payloads must satisfy strict OpenAI Chat Completions validation."""
 
