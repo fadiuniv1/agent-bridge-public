@@ -3686,7 +3686,7 @@ async def agent_chat(req: ChatReq, idempotency_key: Optional[str] = Header(None,
         )
     language_code = str(req.language or "").strip().lower()[:2]
     reply_language = _reply_language_name(language_code)
-    if reply_language and not action_required:
+    if reply_language:
         user_prompt = (
             f"{user_prompt}\n\nReply entirely in {reply_language}. Every word of your answer "
             f"must be in {reply_language}; do not use English."
