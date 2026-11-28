@@ -631,6 +631,26 @@ class ReliabilityAPITests(IsolatedDatabaseTestCase):
         ok = await asyncio.to_thread(server.run_command, "true")
         self.assertEqual(ok["exit_code"], 0)
 
+    async def test_absolute_sudo_path_is_blocked(self):
+        result = await asyncio.to_thread(server.run_command, "/usr/bin/sudo -n /bin/true")
+        self.assertIsNone(result["exit_code"])
+        self.assertIn("blocked", result["stderr"])
+        self.assertIsNotNone(server._validate_privileged_shell("/usr/bin/sudo -n id"))
+        self.assertTrue(server._has_sudo("/usr/bin/sudo -n id"))
+        self.assertFalse(server._has_sudo("echo sudoers"))
+
+    async def test_logs_line_count_is_bounded(self):
+        self.assertEqual((await self.get("/api/logs?lines=0")).status_code, 422)
+        self.assertEqual((await self.get("/api/logs?lines=-1")).status_code, 422)
+        self.assertEqual((await self.get("/api/logs?lines=501")).status_code, 422)
+
+    async def test_system_stats_route_is_distinct(self):
+        paths = [route.path for route in server.app.routes
+                 if getattr(route, "path", None) == "/api/stats"]
+        self.assertEqual(len(paths), 1)
+        response = await self.get("/api/system-stats")
+        self.assertEqual(response.status_code, 200)
+
     def test_privileged_shell_allowlist(self):
         self.assertIsNone(server._validate_privileged_shell("apt-get update"))
         self.assertIsNotNone(server._validate_privileged_shell("apt-get install -o APT::Get::AllowUnauthenticated=true example"))

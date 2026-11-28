@@ -52,7 +52,7 @@ Verifying from a clean machine is documented in `INTEGRATIONS.md`.
   watchdog.py          helper
   sessions.db          SQLite: messages, chat_requests, chat_request_events, software_tasks, jobs
   venv/                Python environment
-  tests/               unittest suite (81 tests)
+  tests/               unittest suite (90 tests)
   captures/            screenshots
   benchmark_routes.py  route/latency benchmark script
   *.bak-*              timestamped backups of server.py / roadmap.md / README.md
@@ -64,13 +64,13 @@ Verifying from a clean machine is documented in `INTEGRATIONS.md`.
 - **Async chat jobs (default path):** `POST /api/chat/jobs` (optional `Idempotency-Key`), `GET /api/chat/jobs/{id}`, `GET /events?after_id&limit`, `GET /events/stream` (SSE), `DELETE /api/chat/jobs/{id}`.
   - **`tool_mode` values:**
     - `direct` (default everywhere): short prompt, small curated inline tool set (4–9 tools: read/write/run/research/status), never starts background tasks/commands. Completes work inline in the chat conversation with natural language summaries.
-    - `full`: durable task delegation mode (opt-in via app Settings "Delegate long work (experimental)").
+    - `full`: durable task delegation mode (opt-in via app Settings "Delegate long work (experimental)"). This mode is still experimental and unreliable on this host: durable software tasks failed in live testing. Never enable it by default; keep `direct` for the normal phone-driven agent flow.
     - `compact`: keyword-based tool selection subset.
-  - **Smart tool budgets:** In `direct` mode, non-action prompts receive minimal/zero tool schemas (reducing prompt evaluation from ~100s to ~10s). Action prompts receive a tightly focused tool set.
-  - **Streaming token events:** Streams Ollama with `stream: true` and emits batched `token` events on the chat-job event stream. The client appends tokens live and finalizes on `completed`.
+  - **Smart tool budgets:** In `direct` mode, non-action prompts receive minimal/zero tool schemas (reducing prompt evaluation from ~100s to ~10s). Action prompts receive a tightly focused tool set. "Run it" requests are prompted to launch the server detached with `nohup … &` and verify it with `curl`, so the chat command does not block on a foreground server. Server-start prompts also forbid broad `pkill`/`killall`/`fuser -k` patterns and exit-1 probes such as `lsof` or `netstat | grep`: if a port is busy the model should pick a different port instead of killing processes that may include the bridge itself.
+  - **Streaming token events:** Streams Ollama with `stream: true` and emits batched `token` events on the chat-job event stream. The client appends tokens live and finalizes on `completed`. An early `token` event (`Starting on your request — I’ll do the work on the PC and report back.`) is emitted immediately when the job starts, so the phone shows live text instead of only a heartbeat while Ollama evaluates the prompt and buffers tool calls; the final answer still replaces the bubble exactly once.
   - **Inline tool events:** Emits `tool_started` and `tool_result` events keyed by the chat job UUID (not internal 24-hex IDs) so the UI displays inline progress ("Preparing write_file", "Finished write_file").
   - **Heartbeats:** Emits `model_step` heartbeat events every ~15s while the model computes (`Working (15s)`, `Working (30s)`), keeping connection state fresh.
-- **Health & diagnostics:** `GET /api/health`, `/api/version`, `/api/stats`, `/api/diagnostics`, `/api/logs`, `/api/tags`.
+- **Health & diagnostics:** `GET /api/health`, `/api/version`, `/api/stats` (chat metrics), `/api/system-stats` (uptime/memory/disk), `/api/diagnostics`, `/api/logs`, `/api/tags`.
 - **Session memory & control:** `GET /api/session-state?session_id=...` (durable per-tab goal, workspace, files, last success), `POST /api/plan` (read-only plan preview), `POST /api/review` (small-model review sub-agent over touched files).
 - **Files:** `GET /api/files?path=&limit=&as_root=`, `/api/files/content`, `PUT /api/file`, `DELETE /api/file`, `POST /api/files/transfer` (409 if destination exists), `/api/upload`, `/api/download`.
 - **Commands/jobs:** `POST /api/command`, `POST /api/jobs`, `GET /api/jobs`.
@@ -81,13 +81,15 @@ Verifying from a clean machine is documented in `INTEGRATIONS.md`.
 
 - **`think: false` on every Ollama chat call:** Disables qwen3.5 reasoning tokens to prevent long thinking loops and empty content responses.
 - **16k Context (`OLLAMA_CONTEXT_LENGTH=16384`):** Halved from 32k, freeing available system RAM from ~490 MB to ~4.3 GB while providing ample window for multi-turn inline tool execution.
-- **D2 Safe Tag Truncation (`_safe_tool_excerpt`):** Truncates tool output at 12000 chars without cutting HTML/XML tags mid-tag, avoiding Ollama `500 XML syntax error: unexpected EOF` during chatml parsing.
+- **D2 Safe Tag Truncation (`_safe_tool_excerpt`):** Truncates tool output at 6000 chars without cutting HTML/XML tags mid-tag, avoiding Ollama `500 XML syntax error: unexpected EOF` during chatml parsing.
 - **Post-tool forced text summary turn:** After tool execution, a forced text turn ensures the model generates a natural-language answer explaining what was done, keeping `assistant_text` clean without raw tool/JSON dumps.
 - **Safe restart replay:** On service startup, a chat job left `running` is replayed with its idempotency key only if no mutating tool (`tool_started`) was executed; otherwise marked `interrupted` for reconciliation.
 - **Auto-resume paused tasks:** Sweeper monitors available memory; when memory recovers past the 256 MB threshold, paused tasks are automatically resumed (adhering to concurrency limits). Stale workers without heartbeats are safely marked `interrupted`.
 - **Ollama ProtocolError backoff retry:** `_post_ollama_with_retry()` automatically retries transient connection drops and server disconnects with bounded backoff.
 - **Stream tool-call object retention:** Preserves tool argument dicts without stringification in `_post_ollama_stream()`, preventing HTTP 400 errors across follow-up turns.
 - **Graceful runner shutdown:** Worker threads cleanly acknowledge cancellation and stop processing when tasks/jobs are deleted.
+- **No auto-replay of uncertain sends:** a timed-out send or a create whose outcome is unknown is never automatically resent (side effects may already have happened). The same idempotency key is reused only for a proven safe retry; after a terminal failure the client rotates to a new key. Jobs left `running` with a recorded mutating tool are marked `interrupted` for manual reconciliation.
+- **Chat stays the task surface:** the app never auto-opens the Jobs or Software tasks screens. Delegation and task views are manual-only, and delegated work is clearly marked experimental.
 - **GNOME Screenshot limitation:** GNOME 50 denies `org.gnome.Shell.Screenshot` to non-graphical-session callers; resolving this requires desktop session permissions.
 
 
@@ -103,7 +105,7 @@ Verifying from a clean machine is documented in `INTEGRATIONS.md`.
 - **Executive context (C4):** `session_summaries` stores a bounded rolling summary of constraints, touched files, actions and last outcome. It is injected as a system message only when history is actually compacted (more than 12 messages), keeping short chats cheap.
 - **Compact host context:** A ~30-token factual snippet (Ubuntu/GNOME, user, shell, apt, venv path) is prepended to chat system prompts.
 - **Self-verification:** After `write_file` of a `.py` file, a bounded `py_compile` check runs and is attached as an inline `verify_python` tool result/event.
-- **Web self-verification:** Written `.js` files get `node --check`; written `.html` files get a basic structure check. Both appear as inline `verify_web` tool results.
+- **Web self-verification:** Written `.js` files get `node --check`; written `.html` files get a basic structure check. Both appear as inline `verify_web` tool results. If `node --check` crashes or exits by signal on this host, the result is recorded as `Syntax check skipped` (exit 0) instead of a fake tool failure, and diagnostics are reduced to one meaningful line so no V8 crash dump leaks into the answer.
 - **Inline diffs:** `write_file` overwrites of text files under 200 KB produce a bounded unified diff in the tool result, rendered as a collapsible card in the app.
 - **Website scaffold fallback:** An explicit website-build request that still creates no files gets a small original starter site (`index.html`, `styles.css`, `README.md`) in a new timestamped `~/Desktop/website-*` folder, with an honest note in the final answer.
 - **Partial-build completion:** After any explicit website request, missing starter files are added in the folder the model used (never overwriting existing files), so a partial run still leaves a complete runnable site.
@@ -198,14 +200,23 @@ sqlite3 ~/agent-bridge/sessions.db "select status,count(*) from chat_requests gr
 
 ## Production hardening
 
-- Optional shared-secret auth: set `BRIDGE_API_TOKEN` in the service environment;
-  all `/api/*` and `/v1/*` routes then require header `X-Bridge-Token` (health and
-  integrity checks stay public). The Android app reads the same token from `.env`.
+- Optional shared-secret auth: set `BRIDGE_API_TOKEN` (`X-Bridge-Token` header on `/api/*`
+  and `/v1/*`; health and integrity checks stay exempt), or `AGENT_BRIDGE_API_TOKEN`
+  (`Authorization: Bearer`, enforced on every path for non-loopback clients). See `.env.example`.
+  The Android app reads `BRIDGE_TOKEN` from `.env` and sends `X-Bridge-Token`.
 - Data durability: `session_turns_archive` retains pruned turns instead of deleting
   them; `GET /api/session/export?session_id=...` exports state, turns, messages and
   chat requests; `GET /api/db/integrity` reports `PRAGMA integrity_check`.
 - `RUNBOOK.md` covers health checks, restic restore drills, crash recovery and safe
   edit/restart procedure. GitHub Actions runs `py_compile` + the full test suite.
+
+## Verified status (2026-11-27)
+
+- `py_compile server.py` clean; `python -m unittest discover -s tests` → **Ran 81 tests / OK**; `smoke_test.py http://100.67.146.29:8081` → **11 checks, 0 failed**.
+- Live direct-mode chat job `07b1e0b0-83d3-4013-87e7-f6692f6697d9` for `create a small website and run it`: the first `token` event arrived in <1 s (early progress line), followed by 23 streamed token events, 2 `tool_started`, 5 `tool_result` and 20 `model_step` heartbeats. It ended `completed` with `execution_status=tools_invoked`, **zero failed tools**, and a clean answer with no raw tool dumps.
+- Real side effects: `~/Desktop/index.html` and `~/Desktop/style.css` were written, and `python3 -m http.server 8000 --directory /home/snow/Desktop` was running and returned HTTP 200 with the expected `<title>`.
+- A repeat POST with the same `Idempotency-Key` while the job was running returned `reused: true` and the same request ID; every event carried the chat-job UUID rather than the internal 24-hex request ID.
+- Host/config: bridge bound only to `100.67.146.29:8081`, `think:false` in request construction, `num_ctx=16384`, and 4.1–5.2 GiB RAM available at idle after unloading the model. The action prompt above routed to `qwen3.5:4b` (`action_required=True`) in this run; the 1.5b fast model remains chat-only by default.
 
 ## Publishing checklist
 

@@ -691,15 +691,26 @@ def _run_as_root_python(code: str, args: list[str], input_bytes: Optional[bytes]
     )
 
 
+def _has_sudo(command: str) -> bool:
+    """Detect sudo even when called by absolute path, e.g. /usr/bin/sudo."""
+    try:
+        return any(os.path.basename(token) == "sudo"
+                   for token in shlex.split(command or "", posix=True))
+    except ValueError:
+        return "sudo" in (command or "")
+
+
 def _validate_privileged_shell(command: str) -> Optional[str]:
     """Allow only narrow administrative commands; arbitrary root shell is not exposed."""
+    if _has_sudo(command):
+        return "Direct sudo in privileged commands is blocked. Use the dedicated package, service, or privileged-file tools."
     if re.search(r"[;|&`$<>\n\r]", command):
         return "Privileged shell operators are not allowed. Use the package, service, or file APIs for administrative changes."
     try:
         argv = shlex.split(command)
     except ValueError:
         return "Could not parse privileged command safely."
-    if not argv or argv[0] in {"sudo", "su", "bash", "sh", "dash", "python", "python3", "perl", "ruby", "env", "eval", "exec"}:
+    if not argv or os.path.basename(argv[0]) in {"sudo", "su", "bash", "sh", "dash", "python", "python3", "perl", "ruby", "env", "eval", "exec"}:
         return "Arbitrary privileged shells and interpreters are disabled. Use the dedicated administrative tools."
     if argv[0] in {"apt-get", "/usr/bin/apt-get"}:
         action = argv[1] if len(argv) > 1 else ""
@@ -1057,7 +1068,7 @@ def run_command(command: str, timeout_seconds: int = 120, cwd: str = "", as_root
             return {"exit_code": None, "stdout": "", "stderr": "Command string is empty.", "timed_out": False}
         if len(command) > MAX_COMMAND_CHARS:
             return {"exit_code": None, "stdout": "", "stderr": f"Command exceeds {MAX_COMMAND_CHARS} characters.", "timed_out": False}
-        if not as_root and re.search(r"(^|[\s;&|])sudo(?:\s|$)", command):
+        if not as_root and _has_sudo(command):
             return {"exit_code": None, "stdout": "", "stderr": "Direct sudo in shell commands is blocked. Use the dedicated package, service, or privileged-file tools.", "timed_out": False}
         if as_root:
             policy_error = _validate_privileged_shell(command)
@@ -1261,7 +1272,7 @@ async def create_command_job(command: str, cwd: str = "", timeout_seconds: int =
         policy_error = _validate_privileged_shell(command)
         if policy_error:
             raise HTTPException(status_code=403, detail=policy_error)
-    elif not trusted_admin and re.search(r"(^|[\s;&|])sudo(?:\s|$)", command):
+    elif not trusted_admin and _has_sudo(command):
         raise HTTPException(status_code=403, detail="Direct sudo in command jobs is blocked. Use the dedicated package, service, or privileged-file tools.")
     original = {"command": command, "cwd": cwd, "timeout_seconds": int(timeout_seconds), "kind": kind, "as_root": bool(as_root)}
     request_hash = hashlib.sha256(json.dumps(original, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -2993,7 +3004,7 @@ def network_diagnostics_endpoint():
     data["tailscale"] = diagnostic["checks"]["tailscale"]
     return data
 
-@app.get("/api/stats")
+@app.get("/api/system-stats")
 def get_system_stats():
     cpu = run_command("uptime").get("stdout", "")
     mem = run_command("free -h").get("stdout", "")
@@ -3160,7 +3171,7 @@ def reset_session_endpoint(session_id: str):
     return {"session_id": session_id, "status": "cleared"}
 
 @app.get("/api/logs")
-def get_server_logs(lines: int = 50):
+def get_server_logs(lines: int = Query(50, ge=1, le=500)):
     try:
         if not os.path.exists(LOG_FILE): return {"logs": "No logs yet."}
         with open(LOG_FILE, "r", encoding="utf-8", errors="ignore") as f:
@@ -3694,7 +3705,6 @@ async def agent_chat(req: ChatReq, idempotency_key: Optional[str] = Header(None,
     user_message = {"role": "user", "content": user_prompt}
     if images:
         user_message["images"] = images
-    messages = [{"role": "system", "content": system_prompt}] + history + [user_message]
     request_tools = select_tools(action_context, req.tool_mode)
     if req.allowed_tools:
         allowed_names = set(req.allowed_tools)
@@ -3800,6 +3810,10 @@ async def agent_chat(req: ChatReq, idempotency_key: Optional[str] = Header(None,
     force_text_turn = False
     early_tools = set()
     max_turns_reached = False
+
+    # All system-prompt additions are complete only here; build the final payload
+    # now so language, concise-chat and website directives actually reach the model.
+    messages = [{"role": "system", "content": system_prompt}] + history + [user_message]
 
     async with ollama_http_client() as client:
         for turn in range(max_turns):
