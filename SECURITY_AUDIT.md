@@ -17,7 +17,7 @@
 | Private vulnerability reporting | **enabled** on both (GitHub API) |
 | Issue/PR templates + `SECURITY.md` reporting link | **added** on both |
 | CI | green — app `verify`, server `server tests` |
-| Tests | app 34/34; server 90/90; smoke 11/11 |
+| Tests | app 34/34; server 91/91; smoke 11/11 |
 | Local Android signing | optional gitignored `keystore.properties`; public clones build unsigned |
 | Signing keystore | outside git (`Temp\opencode\my-local-ai.jks`) — back it up if long-term continuity matters |
 

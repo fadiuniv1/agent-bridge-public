@@ -651,6 +651,13 @@ class ReliabilityAPITests(IsolatedDatabaseTestCase):
         response = await self.get("/api/system-stats")
         self.assertEqual(response.status_code, 200)
 
+    def test_venv_interpreter_write_is_refused(self):
+        with patch.object(server, "HOME_DIR", str(self.home_root)):
+            target = self.home_root / "venv" / "bin" / "python"
+            result = server.write_file(str(target), "malicious")
+        self.assertIn("refusing", result)
+        self.assertFalse(target.exists())
+
     def test_privileged_shell_allowlist(self):
         self.assertIsNone(server._validate_privileged_shell("apt-get update"))
         self.assertIsNotNone(server._validate_privileged_shell("apt-get install -o APT::Get::AllowUnauthenticated=true example"))

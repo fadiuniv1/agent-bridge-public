@@ -52,7 +52,7 @@ Verifying from a clean machine is documented in `INTEGRATIONS.md`.
   watchdog.py          helper
   sessions.db          SQLite: messages, chat_requests, chat_request_events, software_tasks, jobs
   venv/                Python environment
-  tests/               unittest suite (90 tests)
+  tests/               unittest suite (91 tests)
   captures/            screenshots
   benchmark_routes.py  route/latency benchmark script
   *.bak-*              timestamped backups of server.py / roadmap.md / README.md

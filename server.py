@@ -886,9 +886,27 @@ finally:
 '''
 
 
+_PROTECTED_WRITE_PREFIXES = (
+    "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot",
+    "/proc", "/sys", "/dev", "/var/log", "/var/lib",
+)
+
+
+def _is_protected_write_path(path: str) -> bool:
+    """Refuse writes that could replace system binaries or a venv interpreter."""
+    full = os.path.realpath(expand_path(path))
+    if any(full == prefix or full.startswith(prefix + os.sep)
+           for prefix in _PROTECTED_WRITE_PREFIXES):
+        return True
+    normalized = full + os.sep
+    return "/venv/bin/" in normalized or "/.venv/bin/" in normalized
+
+
 def write_file(path: str, content: str, as_root: bool = False, confirm: bool = False) -> str:
     try:
         if not path: return "Error: File path missing."
+        if _is_protected_write_path(path):
+            return "Error writing file: refusing to write to a protected system or virtualenv executable path."
         full = Path(expand_path(path))
         if as_root:
             if not confirm:
